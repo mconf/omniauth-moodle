@@ -4,7 +4,7 @@ module OmniAuth
   module Strategies
     class MoodleURLNotInformed < StandardError
       def initialize(message=nil)
-        message ||= 'The URL for you Moodle website was not configured. Inform it together with the client_id and client_token when defining this Oauth2 provider.'
+        message ||= 'The URL for you Moodle website was not configured or is invalid. Inform it together with the client_id and client_token when defining this Oauth2 provider.'
         super
       end
     end
@@ -16,7 +16,8 @@ module OmniAuth
 
       option :client_options, {
         :authorize_url => "/local/oauth/login.php",
-        :token_url     => "/local/oauth/token.php"
+        :token_url     => "/local/oauth/token.php",
+        :info_url      => "/local/oauth/user_info.php"
       }
 
       uid { raw_info["username"] }
@@ -25,14 +26,25 @@ module OmniAuth
 
       # To include a configurable URL via parameters
       def client
-        fail(MoodleURLNotInformed) if options.site.blank?
+        begin
+          uri = URI.parse(options.site)
 
-        options.client_options.merge!({:site => options.site})
+          options.client_options.merge!({
+            :site => "#{uri.scheme}://#{uri.host}",
+            :authorize_url => "#{uri.path}#{options[:client_options][:authorize_url]}",
+            :token_url => "#{uri.path}#{options[:client_options][:token_url]}",
+            :info_url => "#{uri.path}#{options[:client_options][:info_url]}"
+          })
+
+        rescue URI::InvalidURIError
+          fail(MoodleURLNotInformed)
+        end
+
         super
       end
 
       def raw_info
-        @raw_info ||= access_token.post("/local/oauth/user_info.php", :parse => :json).parsed
+        @raw_info ||= access_token.post(options.client_options.info_url, :parse => :json).parsed
       end
     end
   end
